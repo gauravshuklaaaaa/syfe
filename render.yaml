@@ -4,12 +4,12 @@ services:
     env: docker
     envVars:
       - key: DATABASE_URL
-        value: jdbc:postgresql://db.regvlqvvqzrcfhyfqgce.supabase.co:5432/postgres
+        value: jdbc:postgresql://aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres?user=postgres.regvlqvvqzrcfhyfqgce&sslmode=require
       - key: DB_DRIVER
         value: org.postgresql.Driver
       - key: DB_DIALECT
         value: org.hibernate.dialect.PostgreSQLDialect
       - key: DB_USERNAME
-        value: postgres
+        value: postgres.regvlqvvqzrcfhyfqgce
       - key: DB_PASSWORD
         sync: false
