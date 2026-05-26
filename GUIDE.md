@@ -1,81 +1,37 @@
-# Render.com Deployment Guide
+# Render.com Deployment Guide (Free Tier)
 
-Complete step-by-step guide to deploy the Personal Finance Manager API to Render.com.
+Step-by-step manual setup — no Blueprint required, works on the free plan.
 
 ---
 
 ## Prerequisites
 
-- A [Render.com](https://render.com) account (free tier works)
-- Your project pushed to a GitHub or GitLab repository
-- Git installed locally
+- A [Render.com](https://render.com) account (free tier)
+- Code pushed to GitHub (already done)
 
 ---
 
-## Step 1 — Push Code to GitHub
-
-```bash
-cd /path/to/personal-finance-manager
-
-git init
-git add .
-git commit -m "Initial commit: Personal Finance Manager API"
-
-# Create a new repo on github.com, then:
-git remote add origin https://github.com/YOUR_USERNAME/personal-finance-manager.git
-git branch -M main
-git push -u origin main
-```
-
-Make sure `gradlew` is executable:
-```bash
-git update-index --chmod=+x gradlew
-git commit -m "Fix gradlew permissions"
-git push
-```
-
----
-
-## Step 2 — Deploy via Blueprint (Recommended)
-
-The project includes `render.yaml` which automates everything.
+## Step 1 — Create a PostgreSQL Database
 
 1. Log in to [dashboard.render.com](https://dashboard.render.com)
-2. Click **New +** → **Blueprint**
-3. Connect your GitHub account and select your repository
-4. Render detects `render.yaml` automatically
-5. Click **Apply**
-
-Render will automatically:
-- Create a PostgreSQL database named `finance-db`
-- Create a web service named `personal-finance-api`
-- Set all environment variables from the database
-- Build and deploy the app
-
-Your API will be live at `https://personal-finance-api.onrender.com` in ~5 minutes.
-
----
-
-## Step 3 — Manual Deploy (Alternative)
-
-If you prefer to set things up manually:
-
-### 3a. Create PostgreSQL Database
-
-1. Click **New +** → **PostgreSQL**
-2. Fill in:
+2. Click **New +** → **PostgreSQL**
+3. Fill in:
    - **Name:** `finance-db`
    - **Database:** `financedb`
    - **User:** `finance_user`
-   - **Region:** Choose closest to your users
+   - **Region:** Choose closest to you
    - **Plan:** Free
-3. Click **Create Database**
-4. Wait ~1 minute, then copy the **Internal Database URL**
+4. Click **Create Database**
+5. Wait ~1 minute, then on the database page copy:
+   - **Internal Database URL** (starts with `postgresql://...`)
+   - **Username** and **Password**
 
-### 3b. Create Web Service
+---
+
+## Step 2 — Create a Web Service
 
 1. Click **New +** → **Web Service**
-2. Connect your GitHub repository
+2. Connect your GitHub account and select the `syfe` repository
 3. Fill in:
 
 | Field | Value |
@@ -83,31 +39,34 @@ If you prefer to set things up manually:
 | **Name** | `personal-finance-api` |
 | **Region** | Same as your database |
 | **Branch** | `main` |
-| **Runtime** | `Java` |
-| **Build Command** | `./gradlew clean build -x test` |
-| **Start Command** | `java -jar build/libs/app.jar` |
+| **Runtime** | `Docker` |
 | **Plan** | Free |
 
-### 3c. Set Environment Variables
+4. Leave build/start commands blank — the `Dockerfile` handles everything.
 
-On the Web Service page → **Environment** → add:
+---
+
+## Step 3 — Set Environment Variables
+
+On the Web Service page → **Environment** → add these variables:
 
 | Key | Value |
 |---|---|
-| `DATABASE_URL` | Internal Database URL from Step 3a (must start with `jdbc:postgresql://`) |
+| `DATABASE_URL` | Internal Database URL from Step 1 (the `postgresql://...` string) |
 | `DB_DRIVER` | `org.postgresql.Driver` |
 | `DB_DIALECT` | `org.hibernate.dialect.PostgreSQLDialect` |
 | `DB_USERNAME` | `finance_user` |
-| `DB_PASSWORD` | _(password from your Render DB page)_ |
-| `PORT` | `8080` |
+| `DB_PASSWORD` | password from your Render DB page |
 
-> **Important:** Render provides the DB URL as `postgresql://...`. You must prefix it with `jdbc:` to make it `jdbc:postgresql://...`
+> The app automatically rewrites `postgresql://` to `jdbc:postgresql://` at startup — paste the URL exactly as Render gives it.
+
+5. Click **Save Changes** then **Deploy**.
 
 ---
 
 ## Step 4 — Verify Deployment
 
-Once the build completes:
+Once the build completes (~5 minutes):
 
 ### Health check
 ```bash
@@ -115,7 +74,7 @@ curl https://personal-finance-api.onrender.com/actuator/health
 ```
 Expected:
 ```json
-{"status":"UP","components":{"db":{"status":"UP"}}}
+{"status":"UP"}
 ```
 
 ### Swagger UI
@@ -154,31 +113,28 @@ curl -b cookies.txt -X POST $BASE/api/auth/logout
 
 ## Troubleshooting
 
-### Build fails: `./gradlew: Permission denied`
+### Build fails: permission denied on gradlew
 ```bash
 git update-index --chmod=+x gradlew
 git commit -m "Fix gradlew permissions"
 git push
 ```
 
-### App crashes on startup: `DATABASE_URL not set`
+### App crashes: `DATABASE_URL not set`
 - Go to Web Service → **Environment**
-- Verify `DATABASE_URL` starts with `jdbc:postgresql://`
-- Verify `DB_DRIVER` and `DB_DIALECT` are set
+- Make sure `DATABASE_URL` is set to the Internal Database URL
 
 ### App crashes: `Unable to acquire JDBC Connection`
-- Make sure you're using the **Internal** URL (not External) for services in the same Render region
-- External URL is for connecting from your local machine only
+- Use the **Internal** URL (not External) — both services must be in the same Render region
 
 ### 401 on all requests after login
-- Make sure your HTTP client is sending the `JSESSIONID` cookie with each request
-- Use `-c cookies.txt -b cookies.txt` with curl to persist cookies
-- The session expires after 24 hours — log in again
+- Make sure your HTTP client sends the `JSESSIONID` cookie with each request
+- Use `-c cookies.txt -b cookies.txt` with curl
+- Sessions expire after 24 hours — log in again
 
 ### Free tier cold starts
 - Render free tier spins down after 15 minutes of inactivity
 - First request after sleep takes ~30 seconds
-- Upgrade to Starter plan ($7/month) to avoid this
 
 ---
 
@@ -186,28 +142,17 @@ git push
 
 This API uses **server-side session authentication**, not JWT tokens.
 
-- After login, the server creates a session and returns a `JSESSIONID` cookie
+- After login, the server returns a `JSESSIONID` cookie
 - All subsequent requests must include this cookie
 - Logout invalidates the session server-side
-- Sessions expire after 24 hours of inactivity
 
-**For testing with curl:**
-```bash
-# Always use -c (save) and -b (send) cookie flags
-curl -c cookies.txt -b cookies.txt -X POST .../api/auth/login ...
-curl -b cookies.txt .../api/transactions
-```
+**curl:** always use `-c cookies.txt -b cookies.txt`
 
-**For testing with Postman:**
-- Enable "Automatically follow redirects" and "Send cookies"
-- Postman handles the `JSESSIONID` cookie automatically after login
+**Postman:** enable "Send cookies" — it handles `JSESSIONID` automatically after login
 
-**For frontend apps:**
+**Frontend:**
 ```javascript
-// Use credentials: 'include' to send cookies cross-origin
-fetch('/api/transactions', {
-  credentials: 'include'
-})
+fetch('/api/transactions', { credentials: 'include' })
 ```
 
 ---
@@ -219,36 +164,10 @@ fetch('/api/transactions', {
 | Web Service | 750 hours/month |
 | PostgreSQL | 1 GB storage, 90 days expiry |
 | Bandwidth | 100 GB/month |
-| Build minutes | 500/month |
-
-For production, upgrade to Starter plan ($7/month web + $7/month DB).
-
----
-
-## Custom Domain (Optional)
-
-1. Web Service → **Settings** → **Custom Domains**
-2. Add your domain (e.g., `api.yourapp.com`)
-3. Add a CNAME record in your DNS pointing to your Render URL
-4. Render auto-provisions SSL
-
----
-
-## Monitoring
-
-- **Logs:** Web Service → **Logs** tab (real-time)
-- **Metrics:** Web Service → **Metrics** tab
-- **Health:** `GET /actuator/health` (no auth required)
-- **Events:** Web Service → **Events** tab (deploys, restarts)
 
 ---
 
 ## Continuous Deployment
 
-Render auto-deploys on every push to your connected branch.
-
-To trigger a manual deploy:
+Render auto-deploys on every push to `main`. To trigger a manual deploy:
 - Web Service → **Manual Deploy** → **Deploy latest commit**
-
-To disable auto-deploy:
-- Web Service → **Settings** → **Auto-Deploy** → toggle off
