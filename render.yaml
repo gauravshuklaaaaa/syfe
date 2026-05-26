@@ -1,11 +1,7 @@
 services:
   - type: web
     name: personal-finance-api
-    env: java
-    buildCommand: ./gradlew clean build -x test
-    startCommand: >-
-      DATABASE_URL=$(echo "$DATABASE_URL" | sed 's|^postgresql://|jdbc:postgresql://|')
-      java -jar build/libs/app.jar
+    env: docker
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -23,8 +19,6 @@ services:
         fromDatabase:
           name: finance-db
           property: password
-      - key: PORT
-        value: 8080
 
 databases:
   - name: finance-db
